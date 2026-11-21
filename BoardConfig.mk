@@ -130,9 +130,20 @@ TW_CRYPTO_REAL_BLKDEV := "/dev/block/bootdevice/by-name/userdata"
 TW_CRYPTO_MNT_POINT := "/data"
 TW_CRYPTO_KEY_LOC := "footer"
 TW_CRYPTO_SYSTEM_VOLD_DEBUG := true
-TARGET_HW_DISK_ENCRYPTION := true
 BOARD_USES_METADATA_PARTITION := false
 TW_INCLUDE_KEYMASTER := true
+
+# TARGET_HW_DISK_ENCRYPTION is deliberately not set. It is a Qualcomm
+# switch: turning it on makes TWRP link libcryptfs_hw from
+# device/qcom/common/cryptfs_hw, which this device does not have, and the
+# build fails with
+#
+#   ninja: error: '.../libcryptfs_hw_intermediates/export_includes',
+#   needed by '.../libcryptfsfde_intermediates/import_includes', missing
+#
+# It has nothing to do with FBE: on Kirin the keys are unwrapped by the TEE
+# through keymaster, which is TW_INCLUDE_CRYPTO_FBE and TW_INCLUDE_KEYMASTER
+# above.
 
 # Filesystems
 TARGET_USERIMAGES_USE_EXT4 := true
