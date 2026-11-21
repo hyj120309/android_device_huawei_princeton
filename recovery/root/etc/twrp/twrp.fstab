@@ -1,0 +1,50 @@
+#
+# TWRP fstab for Honor V20 (princeton / PCT-AL10)
+#
+# Derived from the stock EMUI 9.1 recovery_vendor:/vendor/etc/recovery.fstab
+# and fstab.modem, with the mount points and flags TWRP needs.
+#
+# Column layout (v2):
+#   <src> <mnt_point> <type> <mnt_flags> <fs_mgr_flags>
+#
+# The stock fstab uses /dev/block/bootdevice/by-name/* everywhere; UFS lands
+# on /dev/block/sd*, and bootdevice is a symlink maintained by ueventd, so
+# keep using it rather than hardcoding sddXX numbers.
+
+# --- Core partitions -------------------------------------------------------
+
+/dev/block/bootdevice/by-name/system     /system_root  ext4    ro                  wait
+/dev/block/bootdevice/by-name/vendor     /vendor      ext4    ro                  wait
+/dev/block/bootdevice/by-name/product    /product     ext4    ro                  wait
+/dev/block/bootdevice/by-name/version    /version     ext4    ro                  wait
+/dev/block/bootdevice/by-name/cust       /cust        ext4    ro                  wait
+/dev/block/bootdevice/by-name/splash2    /splash2     ext4    rw                  wait
+/dev/block/bootdevice/by-name/cache      /cache       ext4    rw                  wait
+
+# --- Data ------------------------------------------------------------------
+#
+# Stock: f2fs, fileencryption=aes-256-xts:aes-256-cts, length=-16384,
+# reservedsize=20M. The negative length is the f2fs footroom the stock
+# layout reserves; TWRP's mke2fs wrapper understands it on this branch.
+#
+# Decryption is file based (FBE). The keys live in the f2fs
+# /data/f2fs_meta-style footer area that vold creates, which is why
+# TW_CRYPTO_KEY_LOC is "footer" and TW_INCLUDE_CRYPTO_FBE is on.
+/dev/block/bootdevice/by-name/userdata   /data        f2fs    rw,nosuid,nodev,noatime,discard,inline_data,inline_xattr
+/dev/block/bootdevice/by-name/userdata   /data        ext4    rw,nosuid,nodev,noatime,noauto_da_alloc,mblk_io_submit,data=ordered
+/dev/block/bootdevice/by-name/misc       /misc        emmc    defaults
+
+# --- Removable / USB -------------------------------------------------------
+
+/dev/block/mmcblk1p1                     /external_sd vfat    rw                  wait
+/dev/block/sde1                          /usb_otg     vfat    rw                  wait
+/dev/block/sda1                          /usb_emmc    vfat    rw                  wait
+
+# --- Modem (mounted read-only so the radio state is not disturbed) ---------
+#
+# These come from fstab.modem. They are only useful if the modem module is
+# being debugged; mounting them is harmless otherwise.
+#/dev/block/bootdevice/by-name/modem_driver  /vendor/modem/modem_driver  ext4  ro  wait,nofail
+#/dev/block/bootdevice/by-name/modem_fw      /vendor/modem/modem_fw      ext4  ro  wait,nofail
+#/dev/block/bootdevice/by-name/modem_secure  /mnt/modem/modem_secure     ext4  rw  wait,nofail
+#/dev/block/bootdevice/by-name/modemnvm_img  /mnt/modem/mnvm2:0          ext4  rw  wait,nofail

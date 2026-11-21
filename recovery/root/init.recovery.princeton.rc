@@ -1,0 +1,78 @@
+#
+# Recovery init for princeton (Honor V20).
+#
+# AOSP copies TARGET_ROOT_OUT/init.recovery.*.rc into the recovery ramdisk
+# and TWRP imports init.recovery.${ro.hardware}.rc. ro.hardware on this
+# device is kirin980, so this file is what actually gets imported.
+#
+# The contents reproduce the parts of the stock
+# recovery_vendor:/vendor/etc/init/init.recovery.huawei.rc that matter for
+# bringing TWRP up, especially the TEE agent that keymaster needs before it
+# can unwrap the /data keys.
+#
+
+on early-init
+    write /sys/fs/selinux/checkreqprot 0
+    setcon u:r:init:s0
+
+    # teecd is the userspace side of the TEE channel. keymaster talks to it,
+    # and FBE decryption fails with a keymaster error (not a password error)
+    # if it is not running.
+    start teecd
+
+on init
+    mkdir /cust
+    mkdir /splash2
+    mkdir /newsys
+    mkdir /mnt/modem
+    mkdir /usb
+
+    # NV access. The stock recovery sets the device path then waits for the
+    # node to appear; several vendor blobs use /dev/nve0.
+    write /sys/module/hisi_nve/parameters/nve /dev/block/bootdevice/by-name/nvme
+    wait /dev/nve0
+    chmod 0640 /dev/nve0
+
+    write /proc/sys/vm/max_map_count 1000000
+
+on fs
+    # splash2 holds the charging splash data and is writable on stock, so
+    # keep the same permissions or the panel stays dark when recovery is
+    # entered from a powered-off charge.
+    wait /dev/block/bootdevice/by-name/splash2
+    mount ext4 /dev/block/bootdevice/by-name/splash2 /splash2 wait rw nosuid nodev
+    chmod 775 /splash2
+    chown root system /splash2
+
+    trigger firmware_mounts_complete
+
+on post-fs-data
+    start keymaster-3-0
+
+on boot
+    # Same governor settings as stock recovery. Without these the small
+    # cores stay at a low frequency and TWRP's UI is noticeably sluggish.
+    write /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor interactive
+    write /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor ondemand
+
+# --- services ---------------------------------------------------------------
+
+service teecd /vendor/bin/teecd
+    disabled
+    user root
+    group root readproc
+    seclabel u:r:tee:s0
+
+service keymaster-3-0 /vendor/bin/hw/android.hardware.keymaster@3.0-service
+    class early_hal
+    user system
+    group system drmrpc
+    disabled
+
+service hwservicemanager /sbin/hwservicemanager
+    user root
+    group root
+    disabled
+    seclabel u:r:hwservicemanager:s0
+    onrestart class_reset hal
+    onrestart setprop hwservicemanager.ready false

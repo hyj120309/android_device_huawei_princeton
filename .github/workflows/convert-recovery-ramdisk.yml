@@ -1,0 +1,67 @@
+#
+# Build TWRP for the Honor V20 (princeton) and convert the result into the
+# image the recovery_ramdisk partition expects.
+#
+# Why the extra step: AOSP only defines the recoveryimage target when
+# TARGET_NO_KERNEL is false, so the build produces a normal recovery.img
+# with a kernel in the header. This device keeps its kernel in a separate
+# partition and the recovery_ramdisk partition holds only a ramdisk
+# (kernel_size = 0), so tools/mkbootimg_from_ramdisk.py rewrites the header
+# and drops the kernel before anything is uploaded.
+#
+# This workflow only does the packaging half. To get a recovery binary, run
+# Action-TWRP-builder with:
+#
+#   MANIFEST_URL     https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git
+#   MANIFEST_BRANCH  twrp-9.0        (API 28; the aosp manifest has no 9.0)
+#   DEVICE_TREE_URL  <this repo>
+#   DEVICE_PATH      device/huawei/princeton
+#   DEVICE_NAME      princeton
+#   MAKEFILE_NAME    twrp_princeton
+#   BUILD_TARGET     recovery
+#
+# and feed the resulting recovery.img to this workflow, or run
+# build_twrp.sh locally on it.
+#
+
+name: Convert TWRP recovery.img to recovery_ramdisk
+
+on:
+  workflow_dispatch:
+    inputs:
+      recovery_url:
+        description: 'URL of a TWRP recovery.img to convert'
+        required: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Fetch recovery.img
+      run: |
+        curl -fL --retry 3 -o recovery.img "${{ github.event.inputs.recovery_url }}"
+        ls -l recovery.img
+
+    - name: Convert to recovery_ramdisk layout
+      run: |
+        bash build_twrp.sh recovery.img out/recovery_ramdisk-princeton.img
+
+    - name: Verify header
+      run: |
+        python3 - <<'PY'
+        import struct
+        d = open("out/recovery_ramdisk-princeton.img", "rb").read()
+        f = struct.unpack_from("<8s10I16s512s32s", d, 0)
+        assert f[0] == b"ANDROID!", f[0]
+        assert f[1] == 0, f"kernel_size={f[1]}"
+        print(f"kernel_size=0 ramdisk={f[3]:#x} "
+              f"kernel_addr={f[2]:#x} ramdisk_addr={f[4]:#x}")
+        PY
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: recovery_ramdisk-princeton
+        path: out/recovery_ramdisk-princeton.img

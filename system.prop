@@ -1,0 +1,39 @@
+#
+# Properties for the Honor V20 (princeton) TWRP recovery.
+#
+# Values below are taken from the stock EMUI 9.1 recovery ramdisk's
+# prop.default so the recovery reports the same platform to vendor blobs
+# (keymaster, teecd, sensors) as the stock recovery does. Reporting a
+# different ro.board.platform or ro.hardware makes those blobs take code
+# paths they were never built for, and on this device keymaster is what
+# unwraps the FBE keys.
+#
+
+ro.board.platform=kirin980
+ro.hardware=kirin980
+ro.build.system_root_image=true
+ro.vndk.version=28
+ro.zygote=zygote64_32
+
+# Encryption. These have to match the stock recovery or vold refuses to
+# bring up /data: the fstab options in twrp.fstab say the same thing, but
+# vdc reads the property to decide which scheme to use.
+ro.crypto.state=encrypted
+ro.crypto.type=file
+ro.crypto.fs_type=f2fs
+ro.crypto.fs_crypto_blkdev=/dev/block/bootdevice/by-name/userdata
+
+# The stock recovery starts teecd, which is the userspace side of the TEE
+# channel keymaster needs. Without it keymaster cannot talk to the secure
+# world and FBE decryption fails with a keymaster error rather than a
+# password error.
+ro.tee.enable=1
+
+# Display
+ro.sf.lcd_density=480
+
+# Suppress the "system has been modified" style checks that would otherwise
+# run against a recovery ramdisk.
+ro.secure=1
+ro.adb.secure=0
+ro.debuggable=1
