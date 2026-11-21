@@ -121,17 +121,19 @@ TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd_backlight0/brightness"
 # (aes-256-xts:aes-256-cts), so this is FBE and the keys are unwrapped by
 # the TEE through keymaster. teecd must be running first; see
 # recovery/root/init.recovery.princeton.rc.
+#
+# TW_INCLUDE_CRYPTO builds crypto/fde (libcryptfsfde), and on API >= 24 TWRP
+# also sets TW_INCLUDE_CRYPTO_FBE itself, which pulls in crypto/ext4crypt.
+# keymaster support is likewise selected by the platform SDK version in
+# prebuilt/Android.mk, so there is no TW_INCLUDE_KEYMASTER switch to flip.
+#
+# Only variables that TWRP 9.0 actually reads are listed here. Several names
+# that show up in newer device trees (TW_CRYPTO_FS_TYPE, TW_CRYPTO_KEY_LOC,
+# TW_INCLUDE_KEYMASTER, TW_USE_FSCRYPT_POLICY) do not exist on this branch
+# and silently do nothing.
 TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_CRYPTO_FBE := true
-TW_INCLUDE_FBE_METADATA_DECRYPT := true
-TW_USE_FSCRYPT_POLICY := 1
-TW_CRYPTO_FS_TYPE := "f2fs"
-TW_CRYPTO_REAL_BLKDEV := "/dev/block/bootdevice/by-name/userdata"
-TW_CRYPTO_MNT_POINT := "/data"
-TW_CRYPTO_KEY_LOC := "footer"
 TW_CRYPTO_SYSTEM_VOLD_DEBUG := true
-BOARD_USES_METADATA_PARTITION := false
-TW_INCLUDE_KEYMASTER := true
 
 # TARGET_HW_DISK_ENCRYPTION is deliberately not set. It is a Qualcomm
 # switch: turning it on makes TWRP link libcryptfs_hw from
@@ -142,8 +144,7 @@ TW_INCLUDE_KEYMASTER := true
 #   needed by '.../libcryptfsfde_intermediates/import_includes', missing
 #
 # It has nothing to do with FBE: on Kirin the keys are unwrapped by the TEE
-# through keymaster, which is TW_INCLUDE_CRYPTO_FBE and TW_INCLUDE_KEYMASTER
-# above.
+# through keymaster, not by a Qualcomm crypto HAL.
 
 # Filesystems
 TARGET_USERIMAGES_USE_EXT4 := true

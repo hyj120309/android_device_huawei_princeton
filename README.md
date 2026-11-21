@@ -126,22 +126,34 @@ flashing, so the device can be restored.
     length=-16384,fileencryption=aes-256-xts:aes-256-cts,reservedsize=20M
 ```
 
-`fileencryption=` means FBE, not FDE. The relevant settings:
+`fileencryption=` means FBE, not FDE. The settings that TWRP 9.0 actually
+reads on this branch:
 
 ```
 TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_CRYPTO_FBE := true
-TW_INCLUDE_FBE_METADATA_DECRYPT := true
-TW_CRYPTO_FS_TYPE := "f2fs"
-TW_CRYPTO_REAL_BLKDEV := "/dev/block/bootdevice/by-name/userdata"
-TW_CRYPTO_KEY_LOC := "footer"
-TW_INCLUDE_KEYMASTER := true
+TW_CRYPTO_SYSTEM_VOLD_DEBUG := true
 ```
 
-`TW_CRYPTO_KEY_LOC := "footer"` because the stock layout uses
-`length=-16384`: the crypto footer lives at the end of the f2fs filesystem.
-If `/data` is reformatted with different parameters the footer is gone and
-only a factory reset recreates it.
+`TW_INCLUDE_CRYPTO` builds `crypto/fde` (libcryptfsfde); on API >= 24 TWRP
+also sets `TW_INCLUDE_CRYPTO_FBE` itself, which pulls in `crypto/ext4crypt`.
+Keymaster support is likewise chosen by the platform SDK version inside
+`prebuilt/Android.mk`.
+
+Names that appear in newer TWRP device trees — `TW_CRYPTO_FS_TYPE`,
+`TW_CRYPTO_KEY_LOC`, `TW_CRYPTO_MNT_POINT`, `TW_INCLUDE_KEYMASTER`,
+`TW_USE_FSCRYPT_POLICY`, `TW_INCLUDE_FBE_METADATA_DECRYPT` — do not exist on
+the `twrp-9.0` branch and do nothing there.
+
+`TARGET_HW_DISK_ENCRYPTION` is deliberately **not** set: it is a Qualcomm
+switch that makes TWRP link `libcryptfs_hw` from
+`device/qcom/common/cryptfs_hw`, which this device does not have. Enabling it
+fails the build with a missing-module error that names a file which looks
+like it should exist. It has nothing to do with FBE on Kirin.
+
+The stock fstab uses `length=-16384`, so the crypto footer lives at the end
+of the f2fs filesystem. If `/data` is reformatted with different parameters
+the footer is gone and only a factory reset recreates it.
 
 **The keys are hardware-wrapped.** The stock
 `recovery_vendor:/vendor/etc/init/init.recovery.huawei.rc` starts `teecd`
