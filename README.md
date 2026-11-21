@@ -15,13 +15,12 @@ twrp_princeton.mk                         product makefile
 AndroidProducts.mk                        product registration
 vendorsetup.sh                            lunch entry
 system.prop                               properties the stock recovery sets
+build/tasks/recovery_ramdisk.mk           rewrites recovery.img after the build
 recovery/root/init.recovery.princeton.rc   recovery init for this device
 recovery/root/etc/twrp/twrp.fstab          partitions + encryption
 prebuilt/kernel_dummy                     placeholder kernel, discarded
-prebuilt/stock_ramdisk.gz                 stock recovery_ramdisk (gzip cpio)
-prebuilt/stock_recovery_vendor.gz         stock recovery_vendor (gzip cpio)
 tools/mkbootimg_from_ramdisk.py            rewrites the boot header
-build_twrp.sh                             runs that tool + verifies the result
+build_twrp.sh                             runs that tool by hand + verifies
 ```
 
 ## How the image is laid out (this is the part that differs from most devices)
@@ -83,28 +82,40 @@ With Action-TWRP-builder:
 | `MAKEFILE_NAME` | `twrp_princeton` |
 | `BUILD_TARGET` | `recovery` |
 
-That produces `recovery.img`. Convert it:
+That produces `recovery.img`, and the build rewrites its header in place
+before finishing, so the file that ends up in
+`out/target/product/princeton/` is already the flashable one with
+`kernel_size = 0`. Nothing extra to run, and whatever uploads `recovery.img`
+uploads the right image.
+
+`build/tasks/recovery_ramdisk.mk` hooks into `device/*/*/build/tasks/*.mk`,
+which `main.mk` loads after the `recoveryimage` rule is defined, and appends
+the conversion to that target. A stamp file keeps it from running twice on
+the same image.
+
+If you have a `recovery.img` from somewhere else (a CI run, another tree),
+convert it by hand:
 
 ```sh
 ./build_twrp.sh path/to/recovery.img
 # -> out/recovery_ramdisk-princeton.img
 ```
 
-Or run the included `Convert TWRP recovery.img to recovery_ramdisk` workflow
-on that image.
-
-Flash the converted image to the **recovery_ramdisk** partition, not
-`recovery`:
+Flash to the **recovery_ramdisk** partition, not `recovery`:
 
 ```sh
 # confirm the partition names on the device first
 adb shell 'ls /dev/block/by-name/ | grep -i recov'
 
+# from a full build, recovery.img is already converted:
+fastboot flash recovery_ramdisk out/target/product/princeton/recovery.img
+
+# or, when converting by hand:
 fastboot flash recovery_ramdisk out/recovery_ramdisk-princeton.img
 ```
 
-Keep the stock `recovery_ramdisk` image from the firmware package before
-flashing; a copy is in `prebuilt/stock_ramdisk.gz`.
+Keep a copy of the stock `recovery_ramdisk` from the firmware package before
+flashing, so the device can be restored.
 
 ## Encryption
 

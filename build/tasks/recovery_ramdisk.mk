@@ -16,11 +16,11 @@
 #
 
 #
-# Produce the image the recovery_ramdisk partition actually expects.
+# Rewrite recovery.img into the image the recovery_ramdisk partition expects.
 #
 # This device keeps its kernel in a separate partition, and the stock
-# recovery_ramdisk.img has kernel_size = 0 in its boot header: the partition
-# holds a ramdisk and nothing else.
+# recovery_ramdisk.img has kernel_size = 0 in its boot header: that
+# partition holds a ramdisk and nothing else.
 #
 # AOSP cannot be told to build that directly. The recoveryimage target only
 # exists when TARGET_NO_KERNEL is false:
@@ -34,26 +34,40 @@
 # and build-recoveryimage-target always passes --kernel. BOARD_RECOVERY_IMAGE_PREPARE
 # runs before mkbootimg, so it cannot post-process the output either.
 #
-# So build the normal recovery.img and rewrite its header afterwards. The
-# rewrite only drops the kernel and recomputes the header id; the ramdisk
-# bytes, addresses and page size are untouched, which makes the result
-# byte-identical to what mkbootimg produces without --kernel.
+# So build the normal recovery.img and rewrite its header in place
+# afterwards. The rewrite only drops the kernel and recomputes the header
+# id; the ramdisk bytes, addresses and page size are untouched, which makes
+# the result byte-identical to what mkbootimg produces without --kernel.
+#
+# Overwriting recovery.img rather than emitting a second file keeps the
+# usual upload paths working: whatever collects
+# out/target/product/<device>/recovery.img picks up the flashable image.
 #
 # This file is read from device/*/*/build/tasks/*.mk late in main.mk, after
 # the recoveryimage rule exists, so appending to it works.
 #
 
-PRINCETON_RECOVERY_RAMDISK := $(PRODUCT_OUT)/recovery_ramdisk-princeton.img
+PRINCETON_RECOVERY_IMG := $(INSTALLED_RECOVERYIMAGE_TARGET)
 PRINCETON_MKBOOTIMG_TOOL := $(TOPDIR)device/huawei/princeton/tools/mkbootimg_from_ramdisk.py
 
-$(PRINCETON_RECOVERY_RAMDISK): $(INSTALLED_RECOVERYIMAGE_TARGET) $(PRINCETON_MKBOOTIMG_TOOL)
-	@echo "Rewriting recovery header for the recovery_ramdisk partition: $@"
-	$(hide) python3 $(PRINCETON_MKBOOTIMG_TOOL) $(INSTALLED_RECOVERYIMAGE_TARGET) $@
+ifneq ($(strip $(PRINCETON_RECOVERY_IMG)),)
 
-# `make recoveryimage` also produces the flashable image, so there is no
-# extra step to remember.
-recoveryimage: $(PRINCETON_RECOVERY_RAMDISK)
+# A stamp is needed because the recipe modifies its own prerequisite: without
+# it make would compare the stamp against the rewritten recovery.img and run
+# the conversion again on every build.
+PRINCETON_RECOVERY_STAMP := $(PRODUCT_OUT)/.recovery_ramdisk_converted
 
-# Explicit targets for when only the conversion is wanted.
+$(PRINCETON_RECOVERY_STAMP): $(PRINCETON_RECOVERY_IMG) $(PRINCETON_MKBOOTIMG_TOOL)
+	@echo "Rewriting recovery header for the recovery_ramdisk partition"
+	$(hide) python3 $(PRINCETON_MKBOOTIMG_TOOL) $(PRINCETON_RECOVERY_IMG) $(PRINCETON_RECOVERY_IMG).tmp
+	$(hide) mv -f $(PRINCETON_RECOVERY_IMG).tmp $(PRINCETON_RECOVERY_IMG)
+	@echo "recovery.img now has kernel_size = 0"
+	$(hide) touch $@
+
+# `make recoveryimage` produces the flashable image directly.
+recoveryimage: $(PRINCETON_RECOVERY_STAMP)
+
 .PHONY: recovery_ramdisk
-recovery_ramdisk: $(PRINCETON_RECOVERY_RAMDISK)
+recovery_ramdisk: $(PRINCETON_RECOVERY_STAMP)
+
+endif # PRINCETON_RECOVERY_IMG
