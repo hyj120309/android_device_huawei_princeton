@@ -45,9 +45,15 @@ endif
 ```
 
 So setting `TARGET_NO_KERNEL := true` makes the build produce **nothing**,
-which is the opposite of what is wanted. The tree therefore keeps the target
-alive with `prebuilt/kernel_dummy` and drops the kernel on the mkbootimg
-command line itself:
+which is the opposite of what is wanted — and Android 11 gates the recovery
+image on `BOARD_RECOVERYIMAGE_PARTITION_SIZE` too: without it
+`BUILDING_RECOVERY_IMAGE` stays empty, `INSTALLED_RECOVERYIMAGE_TARGET`
+stays empty and `make recoveryimage` reports *"build completed
+successfully"* with *"ninja: no work to do"* — a successful no-op that
+produces no image. The tree therefore sets
+`BOARD_RECOVERYIMAGE_PARTITION_SIZE := 0x2000000` (the real 32MB partition)
+to keep the target alive, keeps `prebuilt/kernel_dummy` as the kernel file,
+and drops the kernel on the mkbootimg command line itself:
 
 ```make
 # BoardConfig.mk
@@ -234,6 +240,11 @@ stock kernel's backlight driver.
 
 - Not yet verified on hardware. The device tree compiles into the expected
   shape; whether TWRP comes up depends on the points below.
+- **The recovery_ramdisk partition is only 32MB.** The build asserts
+  `recovery.img` against `BOARD_RECOVERYIMAGE_PARTITION_SIZE`, so an image
+  that does not fit fails at build time. If that happens, TWRP has to be
+  slimmed (`TW_EXCLUDE_MTP`, no `TW_EXTRA_LANGUAGES`, `TW_EXCLUDE_BASH`,
+  ...) until it fits.
 - **Touch**: `TW_INPUT_BLACKLIST := "hbtp_vm"` is a guess. Check
   `/proc/bus/input/devices` on the device and adjust.
 - **SELinux**: the stock ramdisk's sepolicy is used. If teecd or keymaster

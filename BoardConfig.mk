@@ -112,11 +112,22 @@ BOARD_USES_RECOVERY_AS_BOOT := false
 TARGET_RECOVERY_FSTAB := $(LOCAL_PATH)/recovery/root/etc/twrp/twrp.fstab
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
 
-# Partition sizes. Not enforced by the build (nothing here does assert-max-
-# image-size on recovery because BOARD_RECOVERYIMAGE_PARTITION_SIZE is unset),
-# but kept for reference: the stock recovery_ramdisk partition is 32MB and
-# the ramdisk alone has to fit in it.
-# BOARD_RECOVERYIMAGE_PARTITION_SIZE := 0x2000000
+# Partition sizes. This is not just documentation: AOSP 11 gates the whole
+# recovery image on it -
+#
+#   BUILDING_RECOVERY_IMAGE := (empty)
+#   else ifeq ($(PRODUCT_BUILD_RECOVERY_IMAGE),)
+#     ifdef BOARD_RECOVERYIMAGE_PARTITION_SIZE
+#       BUILDING_RECOVERY_IMAGE := true
+#     ...
+#
+# and without BUILDING_RECOVERY_IMAGE, INSTALLED_RECOVERYIMAGE_TARGET stays
+# empty and `make recoveryimage` is a no-op ("ninja: no work to do",
+# "build completed successfully" in two minutes with nothing built). The
+# stock recovery_ramdisk partition is 32MB, so the built image has to fit
+# there: assert-max-image-size in build-recoveryimage-target enforces the
+# limit at build time and fails loudly instead of at flash time.
+BOARD_RECOVERYIMAGE_PARTITION_SIZE := 0x2000000
 
 # The stock recovery ramdisk uses system-as-root, so the build has to put
 # /system under /system_root and symlink it.
