@@ -15,12 +15,9 @@
 
 on early-init
     write /sys/fs/selinux/checkreqprot 0
-    setcon u:r:init:s0
-
-    # teecd is the userspace side of the TEE channel. keymaster talks to it,
-    # and FBE decryption fails with a keymaster error (not a password error)
-    # if it is not running.
-    start teecd
+    # Note: stock also ran `setcon u:r:init:s0` here, but setcon is not a
+    # keyword in Android 11 init (host_init_verifier rejects the whole file),
+    # and init already runs in u:r:init:s0, so it is dropped.
 
 on init
     mkdir /cust
@@ -49,6 +46,13 @@ on fs
     trigger firmware_mounts_complete
 
 on post-fs-data
+    # Order matters: teecd is the userspace side of the TEE channel that
+    # keymaster talks to, hwservicemanager is the HIDL registry the keymaster
+    # HAL registers with, and keymaster-3-0 unwraps the /data keys. All
+    # three exec from /vendor, which TWRP mounts late; init respawns a
+    # failed service with backoff, so they come up once /vendor exists.
+    start teecd
+    start hwservicemanager
     start keymaster-3-0
 
 on boot
@@ -65,13 +69,22 @@ service teecd /vendor/bin/teecd
     group root readproc
     seclabel u:r:tee:s0
 
+# keymaster-3-0 has an explicit seclabel because its binary lives on the
+# vendor partition, whose file contexts are not part of the recovery
+# policy, so init cannot compute one from the file. The recovery domain is
+# permissive under TWRP's sepolicy.
 service keymaster-3-0 /vendor/bin/hw/android.hardware.keymaster@3.0-service
     class early_hal
     user system
     group system drmrpc
     disabled
+    seclabel u:r:recovery:s0
 
-service hwservicemanager /sbin/hwservicemanager
+# hwservicemanager lives in /system/bin on this branch (there is no /sbin
+# in the Android 11 recovery ramdisk; rootdir only symlinks /bin and /etc
+# to /system/*). Its domain exists in the recovery policy (public/
+# hwservicemanager.te is compiled into sepolicy.recovery).
+service hwservicemanager /system/bin/hwservicemanager
     user root
     group root
     disabled
