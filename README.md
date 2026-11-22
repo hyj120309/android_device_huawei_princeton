@@ -203,7 +203,7 @@ From `recovery_vendor:/vendor/etc/recovery.fstab`:
 | partition | mount | fs |
 |---|---|---|
 | system | `/system_root` | ext4 |
-| vendor | `/vendor` | ext4 |
+| vendor | `/vendor` | erofs (ro by design) |
 | product | `/product` | ext4 |
 | version | `/version` | ext4 |
 | cust | `/cust` | ext4 |

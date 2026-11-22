@@ -12,13 +12,17 @@
 # keep using it rather than hardcoding sddXX numbers.
 
 # --- Core partitions -------------------------------------------------------
+#
+# /vendor is erofs on this unit (EMUI 9.1), so it must be mounted as erofs;
+# an ext4 mount fails and teecd/keymaster from the vendor partition never
+# start. erofs is read-only by design, matching the ro flags.
 
 /dev/block/bootdevice/by-name/system     /system_root  ext4    ro                  wait
-/dev/block/bootdevice/by-name/vendor     /vendor      ext4    ro                  wait
+/dev/block/bootdevice/by-name/vendor     /vendor      erofs   ro                  wait
 /dev/block/bootdevice/by-name/product    /product     ext4    ro                  wait
 /dev/block/bootdevice/by-name/version    /version     ext4    ro                  wait
-/dev/block/bootdevice/by-name/cust       /cust        ext4    ro                  wait
-/dev/block/bootdevice/by-name/splash2    /splash2     ext4    rw                  wait
+/dev/block/bootdevice/by-name/cust        /cust        ext4    ro                  wait
+/dev/block/bootdevice/by-name/splash2     /splash2     ext4    rw                  wait
 /dev/block/bootdevice/by-name/cache      /cache       ext4    rw                  wait
 
 # --- Data ------------------------------------------------------------------
