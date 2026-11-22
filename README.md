@@ -98,7 +98,7 @@ With Action-TWRP-builder:
 | `MANIFEST_URL` | `https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git` |
 | `MANIFEST_BRANCH` | `twrp-11` |
 | `DEVICE_TREE_URL` | this repo |
-| `DEVICE_TREE_BRANCH` | `master` (or `main`; both point at the same commit) |
+| `DEVICE_TREE_BRANCH` | `main` (also the workflow default; there is no `master` branch) |
 | `DEVICE_PATH` | `device/huawei/princeton` |
 | `DEVICE_NAME` | `princeton` |
 | `MAKEFILE_NAME` | `twrp_princeton` |
