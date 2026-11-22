@@ -13,9 +13,13 @@
 
 # --- Core partitions -------------------------------------------------------
 #
-# /vendor is erofs on this unit (EMUI 9.1), so it must be mounted as erofs;
-# an ext4 mount fails and teecd/keymaster from the vendor partition never
-# start. erofs is read-only by design, matching the ro flags.
+# The fs column is a fallback, not a mandate: TWPartition::Mount() runs
+# blkid (Check_FS_Type) first and mounts with whatever it detects, so a
+# wrong column here is usually corrected at mount time. The column still
+# matters when the probe fails (blkid did not recognize the superblock),
+# and Wipe()/Format() use it too, so it is kept truthful per partition.
+# /vendor is erofs on this unit (EMUI 9.1); erofs is read-only by design,
+# matching the ro flags.
 
 /dev/block/bootdevice/by-name/system     /system_root  ext4    ro                  wait
 /dev/block/bootdevice/by-name/vendor     /vendor      erofs   ro                  wait
