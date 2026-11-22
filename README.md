@@ -13,13 +13,12 @@ against a different firmware version.
 BoardConfig.mk                            board/TWRP settings
 twrp_princeton.mk                         product makefile
 AndroidProducts.mk                        product registration
-vendorsetup.sh                            lunch entry
+vendorsetup.sh                            kept as a no-op (see file)
 system.prop                               properties the stock recovery sets
-build/tasks/recovery_ramdisk.mk           rewrites recovery.img after the build
 recovery/root/init.recovery.princeton.rc   recovery init for this device
 recovery/root/etc/twrp/twrp.fstab          partitions + encryption
-prebuilt/kernel_dummy                     placeholder kernel, discarded
-tools/mkbootimg_from_ramdisk.py            rewrites the boot header
+prebuilt/kernel_dummy                     placeholder kernel, never in the image
+tools/mkbootimg_from_ramdisk.py            rewrites a boot header by hand
 build_twrp.sh                             runs that tool by hand + verifies
 ```
 
@@ -46,10 +45,28 @@ endif
 ```
 
 So setting `TARGET_NO_KERNEL := true` makes the build produce **nothing**,
-which is the opposite of what is wanted. The tree therefore builds a normal
-`recovery.img` with `prebuilt/kernel_dummy` as the kernel, and then
-`tools/mkbootimg_from_ramdisk.py` rewrites the header with `kernel_size = 0`
-and drops the kernel. The dummy kernel is never executed.
+which is the opposite of what is wanted. The tree therefore keeps the target
+alive with `prebuilt/kernel_dummy` and drops the kernel on the mkbootimg
+command line itself:
+
+```make
+# BoardConfig.mk
+BOARD_RECOVERY_MKBOOTIMG_ARGS := --header_version 0 --kernel /dev/null
+```
+
+`build-recoveryimage-target` runs
+`$(MKBOOTIMG) --kernel $(recovery_kernel) $(INTERNAL_RECOVERYIMAGE_ARGS) ... $(BOARD_RECOVERY_MKBOOTIMG_ARGS)`,
+and `BOARD_RECOVERY_MKBOOTIMG_ARGS` comes **after** the internal
+`--kernel`, so mkbootimg's argparse keeps the last value: the header is
+written with `kernel_size = 0` and no kernel pages — exactly the shape of
+the stock partition image, straight out of the build. The dummy kernel is
+never read and never executed.
+
+(An earlier version of this tree rewrote `recovery.img` after the build via
+a `build/tasks/*.mk` hook. That never ran: nothing in the twrp-11 AOSP
+tree includes device `build/tasks` files — the omni 9 tree only loaded
+`vendor/omni/build/tasks/*` because `vendor/omni/Android.mk` includes its
+own tree. The hook is gone.)
 
 Boot header fields are the AOSP defaults on base `0x10000000`, which is what
 the stock image uses:
@@ -66,35 +83,34 @@ the stock image uses:
 
 ## Building
 
-Manifest: **`platform_manifest_twrp_omni`, branch `twrp-9.0`**.
-The `platform_manifest_twrp_aosp` repo has no 9.0 branch (it starts at
-twrp-11), so omni is the only option for API 28.
+Manifest: **`platform_manifest_twrp_aosp`, branch `twrp-11`**.
+The tree is written against the Android 11 (API 30) TWRP branches: the
+product makefile inherits `base.mk` (Android 11 removed `embedded.mk`),
+and the crypto/`prebuilt` wiring matches the `android-11` branch of
+`android_bootable_recovery`. The omni `twrp-9.0` tree is **not** usable
+with this device tree anymore: its build assumes API 28 and the product
+chain differs.
 
 With Action-TWRP-builder:
 
 | parameter | value |
 |---|---|
-| `MANIFEST_URL` | `https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git` |
-| `MANIFEST_BRANCH` | `twrp-9.0` |
+| `MANIFEST_URL` | `https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git` |
+| `MANIFEST_BRANCH` | `twrp-11` |
 | `DEVICE_TREE_URL` | this repo |
+| `DEVICE_TREE_BRANCH` | `master` (or `main`; both point at the same commit) |
 | `DEVICE_PATH` | `device/huawei/princeton` |
 | `DEVICE_NAME` | `princeton` |
 | `MAKEFILE_NAME` | `twrp_princeton` |
 | `BUILD_TARGET` | `recovery` |
 
-That produces `recovery.img`, and the build rewrites its header in place
-before finishing, so the file that ends up in
-`out/target/product/princeton/` is already the flashable one with
-`kernel_size = 0`. Nothing extra to run, and whatever uploads `recovery.img`
-uploads the right image.
+That produces `out/target/product/princeton/recovery.img` with
+`kernel_size = 0` already — the mkbootimg override in BoardConfig.mk drops
+the kernel at image creation time, so there is no post-processing step and
+whatever uploads `recovery.img` uploads the right image.
 
-`build/tasks/recovery_ramdisk.mk` hooks into `device/*/*/build/tasks/*.mk`,
-which `main.mk` loads after the `recoveryimage` rule is defined, and appends
-the conversion to that target. A stamp file keeps it from running twice on
-the same image.
-
-If you have a `recovery.img` from somewhere else (a CI run, another tree),
-convert it by hand:
+If you have a `recovery.img` from somewhere else (a full boot image with a
+kernel in it), convert it by hand:
 
 ```sh
 ./build_twrp.sh path/to/recovery.img
@@ -126,24 +142,28 @@ flashing, so the device can be restored.
     length=-16384,fileencryption=aes-256-xts:aes-256-cts,reservedsize=20M
 ```
 
-`fileencryption=` means FBE, not FDE. The settings that TWRP 9.0 actually
-reads on this branch:
+`fileencryption=` means FBE, not FDE. The settings that the twrp-11 tree
+actually reads:
 
 ```
 TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_CRYPTO_FBE := true
 TW_CRYPTO_SYSTEM_VOLD_DEBUG := true
+RECOVERY_SDCARD_ON_DATA := true
 ```
 
 `TW_INCLUDE_CRYPTO` builds `crypto/fde` (libcryptfsfde); on API >= 24 TWRP
 also sets `TW_INCLUDE_CRYPTO_FBE` itself, which pulls in `crypto/ext4crypt`.
-Keymaster support is likewise chosen by the platform SDK version inside
-`prebuilt/Android.mk`.
+Keymaster support is chosen by the platform SDK version inside
+`prebuilt/Android.mk`: on the SDK 30 twrp-11 tree it links
+`android.hardware.keymaster@4.0` + `libkeymaster4support` with
+`TW_KEYMASTER_MAX_API=4`, and at runtime it walks down to the 3.0 HAL this
+device actually has.
 
-Names that appear in newer TWRP device trees — `TW_CRYPTO_FS_TYPE`,
+Names that appear in other TWRP device trees — `TW_CRYPTO_FS_TYPE`,
 `TW_CRYPTO_KEY_LOC`, `TW_CRYPTO_MNT_POINT`, `TW_INCLUDE_KEYMASTER`,
 `TW_USE_FSCRYPT_POLICY`, `TW_INCLUDE_FBE_METADATA_DECRYPT` — do not exist on
-the `twrp-9.0` branch and do nothing there.
+the twrp-11 tree either and do nothing there.
 
 `TARGET_HW_DISK_ENCRYPTION` is deliberately **not** set: it is a Qualcomm
 switch that makes TWRP link `libcryptfs_hw` from
@@ -218,7 +238,9 @@ stock kernel's backlight driver.
   `/proc/bus/input/devices` on the device and adjust.
 - **SELinux**: the stock ramdisk's sepolicy is used. If teecd or keymaster
   are denied, `dmesg | grep avc` will say which rule is missing.
-- **`system.prop` sets `ro.hardware=kirin980`** while the init file is named
-  `init.recovery.princeton.rc`. The recovery init imports
-  `init.recovery.${ro.hardware}.rc` and TWRP additionally imports
-  `init.recovery.${TARGET_DEVICE}.rc`; if neither fires, rename the file.
+- **`system.prop` sets `ro.hardware=kirin980`**, and the recovery init imports
+  `init.recovery.${ro.hardware}.rc`. The same rc file is therefore installed
+  under **both** names — `init.recovery.kirin980.rc` and
+  `init.recovery.princeton.rc` — so whichever value `ro.hardware` has on the
+  running device, the import hits. If TWRP comes up without teecd, check
+  `getprop ro.hardware` in the running recovery and rename accordingly.

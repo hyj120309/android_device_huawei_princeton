@@ -56,20 +56,27 @@ TARGET_BOARD_PLATFORM_GPU := mali-g76
 #
 # The stock image layout puts the kernel in its own "kernel" partition and
 # the recovery_ramdisk partition holds only a ramdisk (kernel_size = 0 in
-# the boot header). We still have to let the build produce a normal
-# recovery.img, because AOSP gates the whole recoveryimage target on
-# TARGET_NO_KERNEL being false:
+# the boot header). The kernel that actually runs recovery is the one in
+# the kernel partition, so whatever kernel the build puts into
+# recovery.img is dead weight: it has to be absent, not correct.
 #
-#   ifeq (,$(filter true,$(TARGET_NO_KERNEL) $(TARGET_NO_RECOVERY)))
-#   INSTALLED_RECOVERYIMAGE_TARGET := $(PRODUCT_OUT)/recovery.img
-#   else
-#   INSTALLED_RECOVERYIMAGE_TARGET :=        # make recoveryimage does nothing
-#   endif
+# AOSP gates the whole recoveryimage target on TARGET_NO_KERNEL being
+# false, so a dummy prebuilt kernel keeps the target alive. The kernel is
+# then dropped on the mkbootimg command line itself:
 #
-# So build a full recovery.img and strip the kernel back out afterwards:
-# tools/mkbootimg_from_ramdisk.py rewrites the header with kernel_size = 0,
-# which is exactly the shape the stock partition has. The kernel never needs
-# to actually work, it is discarded.
+#   build-recoveryimage-target runs
+#     $(MKBOOTIMG) --kernel $(recovery_kernel) $(INTERNAL_RECOVERYIMAGE_ARGS)
+#                  $(INTERNAL_MKBOOTIMG_VERSION_ARGS)
+#                  $(BOARD_RECOVERY_MKBOOTIMG_ARGS) --output $@
+#
+# BOARD_RECOVERY_MKBOOTIMG_ARGS is appended after the internal --kernel, and
+# mkbootimg's argparse keeps the last value of a repeated option, so
+# "--kernel /dev/null" wins: the header is written with kernel_size = 0 and
+# no kernel pages, which is exactly the shape of the stock partition image.
+# No post-processing of recovery.img is needed afterwards. (The earlier
+# approach of rewriting recovery.img from a build/tasks/*.mk hook is gone:
+# nothing in the twrp-11 AOSP tree includes device build/tasks files, so
+# that hook never ran.)
 #
 # Addresses below come from the stock recovery_ramdisk.img header. They are
 # exactly the AOSP defaults applied to base 0x10000000:
@@ -86,17 +93,24 @@ BOARD_KERNEL_BASE     := 0x10000000
 BOARD_KERNEL_PAGESIZE := 2048
 BOARD_KERNEL_CMDLINE  :=
 BOARD_MKBOOTIMG_ARGS  := --header_version 0
+BOARD_RECOVERY_MKBOOTIMG_ARGS := --header_version 0 --kernel /dev/null
 
-# A kernel file is required by the build even though it gets discarded.
-# Point at the dummy that ships with this tree (a 1-sector file is enough
-# for mkbootimg).
+# A kernel file is required by the build graph even though it never reaches
+# the image. Point at the dummy that ships with this tree.
 TARGET_PREBUILT_KERNEL := $(LOCAL_PATH)/prebuilt/kernel_dummy
 
 # Recovery image shape
 BOARD_USES_RECOVERY_AS_BOOT := false
+#
+# TARGET_RECOVERY_FSTAB is what puts the fstab into the image: AOSP 11
+# copies it to $(TARGET_RECOVERY_ROOT_OUT)/system/etc/recovery.fstab, and
+# the ramdisk root has /etc -> /system/etc (created by
+# system/core/rootdir/Android.mk), so TWRP finds it through its fallback
+# path /etc/recovery.fstab. TWRP also looks for /etc/twrp.fstab first; the
+# file name in the tree stays twrp.fstab, only the destination inside the
+# image is recovery.fstab.
 TARGET_RECOVERY_FSTAB := $(LOCAL_PATH)/recovery/root/etc/twrp/twrp.fstab
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
-TARGET_RECOVERY_UI_BLANK_UNBLANK_ON_INIT := true
 
 # Partition sizes. Not enforced by the build (nothing here does assert-max-
 # image-size on recovery because BOARD_RECOVERYIMAGE_PARTITION_SIZE is unset),
@@ -125,12 +139,16 @@ TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd_backlight0/brightness"
 # TW_INCLUDE_CRYPTO builds crypto/fde (libcryptfsfde), and on API >= 24 TWRP
 # also sets TW_INCLUDE_CRYPTO_FBE itself, which pulls in crypto/ext4crypt.
 # keymaster support is likewise selected by the platform SDK version in
-# prebuilt/Android.mk, so there is no TW_INCLUDE_KEYMASTER switch to flip.
+# prebuilt/Android.mk (SDK 30 links android.hardware.keymaster@4.0 and
+# libkeymaster4support with TW_KEYMASTER_MAX_API=4; at runtime the code
+# walks down to the 3.0 HAL this device actually has), so there is no
+# TW_INCLUDE_KEYMASTER switch to flip.
 #
-# Only variables that TWRP 9.0 actually reads are listed here. Several names
-# that show up in newer device trees (TW_CRYPTO_FS_TYPE, TW_CRYPTO_KEY_LOC,
-# TW_INCLUDE_KEYMASTER, TW_USE_FSCRYPT_POLICY) do not exist on this branch
-# and silently do nothing.
+# Only variables that the twrp-11 tree actually reads are listed here.
+# Several names that show up in other device trees (TW_CRYPTO_FS_TYPE,
+# TW_CRYPTO_KEY_LOC, TW_INCLUDE_KEYMASTER, TW_USE_FSCRYPT_POLICY,
+# TW_INCLUDE_FBE_METADATA_DECRYPT) do not exist on this branch and silently
+# do nothing.
 TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_CRYPTO_FBE := true
 TW_CRYPTO_SYSTEM_VOLD_DEBUG := true
@@ -154,17 +172,20 @@ BOARD_HAS_LARGE_FILESYSTEM := true
 
 # Storage. UFS raw nodes are /dev/block/sd* with unstable numbering; the
 # fstab uses the by-name symlinks.
+#
+# /data/media is the emulated internal storage, so RECOVERY_SDCARD_ON_DATA
+# tells TWRP there is no physical sdcard partition.
+RECOVERY_SDCARD_ON_DATA := true
 TW_INTERNAL_STORAGE_PATH := "/data/media/0"
 TW_INTERNAL_STORAGE_MOUNT_POINT := "data"
 TW_EXTERNAL_STORAGE_PATH := "/external_sd"
 TW_EXTERNAL_STORAGE_MOUNT_POINT := "external_sd"
-TW_HAS_USB_STORAGE := true
 
 # Properties
 TARGET_SYSTEM_PROP := $(LOCAL_PATH)/system.prop
 
 # Files this tree contributes to the recovery ramdisk are listed in
-# twrp_princeton.mk via PRODUCT_COPY_FILES. AOSP 9 has no
+# twrp_princeton.mk via PRODUCT_COPY_FILES. AOSP has no
 # TARGET_RECOVERY_DEVICE_DIRS (that was removed after 8.1) and the build
 # never reads the device tree's own recovery/root directory, so anything
 # that has to end up in the ramdisk must go through PRODUCT_COPY_FILES.
@@ -175,12 +196,15 @@ TW_DEFAULT_LANGUAGE := zh_CN
 TW_SCREEN_BLANK_ON_BOOT := true
 TW_INPUT_BLACKLIST := "hbtp_vm"
 TW_USE_TOOLBOX := true
-TW_INCLUDE_FUSE_EXFAT := true
-TW_EXCLUDE_TWRPAPP := true
 TW_NO_LEGACY_PROPS := true
 
-# system-as-root, matching the stock recovery ramdisk layout
-BOARD_ROOT_EXTRA_SYMLINKS := \
-    /vendor:system/vendor \
-    /bin:system/bin \
-    /etc:system/etc
+# exfat support is built into this branch (opt-out would be TW_NO_EXFAT),
+# and the TWRP app placeholder is installed unconditionally; there is
+# nothing left to enable for either.
+
+# Root symlink layout (/bin, /etc, /vendor, ...) is created by
+# system/core/rootdir/Android.mk and needs no BOARD_ROOT_EXTRA_SYMLINKS
+# here. Mount points like /vendor and /cache do not need pre-created
+# directories either: TWRP's TWPartition::Setup_File_System() makes (or
+# unlinks and re-makes) the mount point directory for every fstab entry
+# before mounting it.

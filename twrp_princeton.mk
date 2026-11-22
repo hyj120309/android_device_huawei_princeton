@@ -20,39 +20,46 @@
 #
 # Kirin 980, EMUI 9.1 (Android 9 / API 28), system-as-root.
 #
+# The product chain targets the twrp-11 (Android 11) tree. On Android 11
+# target/product/embedded.mk no longer exists, and base.mk is the
+# unsplit-product equivalent, so inherit that one; vendor/twrp pulls in the
+# recovery GUI, the packages and the common properties.
+#
 
 $(call inherit-product, $(SRC_TARGET_DIR)/product/base.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/embedded.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_full.mk)
+$(call inherit-product, vendor/twrp/config/common.mk)
 
 PRODUCT_DEVICE := princeton
 PRODUCT_NAME := twrp_princeton
 PRODUCT_BRAND := HONOR
 PRODUCT_MODEL := PCT-AL10
 PRODUCT_MANUFACTURER := HONOR
+PRODUCT_BUILD_PROP_OVERRIDES += \
+    PRODUCT_NAME=princeton \
+    TARGET_DEVICE=princeton
 
 # Do not rely on LOCAL_PATH surviving the include chain from
 # AndroidProducts.mk; define it here.
 LOCAL_PATH := device/huawei/princeton
 
-# Recovery-only build, no system image.
-PRODUCT_BUILD_PROP_OVERRIDES += \
-    PRODUCT_NAME=princeton \
-    TARGET_DEVICE=princeton
-
 #
 # Files that go into the recovery ramdisk.
 #
-# AOSP 9's build-recoveryimage-target copies $(TARGET_ROOT_OUT) into the
-# recovery root and then specifically copies $(TARGET_ROOT_OUT)/init.recovery.*.rc
-# across. It does *not* read anything from the device tree's own
-# recovery/root directory (TARGET_RECOVERY_DEVICE_DIRS was removed after
-# 8.1), so files have to be listed here explicitly.
-#
-# init.recovery.princeton.rc is the one the recovery init imports
-# (ro.hardware is kirin980, but TWRP imports init.recovery.${TARGET_DEVICE}.rc
-# as well), and it is what starts teecd before keymaster needs it.
+# Only init.recovery.*.rc files survive the build's ramdisk cleanup, and
+# TWRP's init.rc imports exactly /init.recovery.${ro.hardware}.rc. On this
+# device ro.hardware is kirin980, so that is the name that counts; the same
+# file is also installed under the device name in case ro.hardware turns
+# out different on the running device. The rc starts teecd before keymaster
+# needs it.
 PRODUCT_COPY_FILES += \
-    $(LOCAL_PATH)/recovery/root/init.recovery.princeton.rc:$(TARGET_COPY_OUT_RECOVERY)/root/init.recovery.princeton.rc \
-    $(LOCAL_PATH)/recovery/root/etc/twrp/twrp.fstab:$(TARGET_COPY_OUT_RECOVERY)/root/etc/twrp/twrp.fstab
+    $(LOCAL_PATH)/recovery/root/init.recovery.princeton.rc:$(TARGET_COPY_OUT_RECOVERY)/root/init.recovery.kirin980.rc \
+    $(LOCAL_PATH)/recovery/root/init.recovery.princeton.rc:$(TARGET_COPY_OUT_RECOVERY)/root/init.recovery.princeton.rc
+
+# The fstab deliberately has no PRODUCT_COPY_FILES entry: BoardConfig.mk
+# sets TARGET_RECOVERY_FSTAB, and build-recoveryimage-target copies that
+# file to /system/etc/recovery.fstab itself. TWRP finds it through the
+# ramdisk's /etc -> /system/etc symlink as /etc/recovery.fstab. Copying it
+# to /etc/twrp/... instead (as this tree did originally) would not work:
+# TWRP only looks for /etc/twrp.fstab and /etc/recovery.fstab, and a real
+# /etc directory in the ramdisk would break the /etc symlink anyway.

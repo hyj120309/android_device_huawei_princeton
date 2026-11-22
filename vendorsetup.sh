@@ -18,10 +18,10 @@
 #
 # Registers this device with lunch.
 #
-# The build system picks device trees up through AndroidProducts.mk, so this
-# file mainly exists because many users expect it and some TWRP branches
-# call it from the top-level vendored setup. Keeping it empty of logic means
-# there is no risk of it disagreeing with AndroidProducts.mk.
+# The build system picks device trees up through AndroidProducts.mk, whose
+# COMMON_LUNCH_CHOICES is the supported way to register products. In
+# Android 9 this file used add_lunch_combo; that helper is gone in
+# Android 11 (build/envsetup.sh prints an "obsolete" warning for it), so
+# the file now carries no logic at all. It only stays because some flows
+# source device vendorsetup.sh files and a missing file would be surprising.
 #
-
-add_lunch_combo twrp_princeton-eng

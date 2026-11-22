@@ -1,9 +1,11 @@
 #
 # Recovery init for princeton (Honor V20).
 #
-# AOSP copies TARGET_ROOT_OUT/init.recovery.*.rc into the recovery ramdisk
-# and TWRP imports init.recovery.${ro.hardware}.rc. ro.hardware on this
-# device is kirin980, so this file is what actually gets imported.
+# AOSP copies init.recovery.*.rc files into the recovery ramdisk, and
+# TWRP's init.rc imports exactly /init.recovery.${ro.hardware}.rc. ro.hardware
+# on this device is kirin980, so twrp_princeton.mk installs this file as
+# init.recovery.kirin980.rc (and also as init.recovery.princeton.rc, in case
+# ro.hardware differs on the running device).
 #
 # The contents reproduce the parts of the stock
 # recovery_vendor:/vendor/etc/init/init.recovery.huawei.rc that matter for
